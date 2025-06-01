@@ -11,7 +11,7 @@ from collections import deque
 FPS = 60
 
 WINDOW_WIDTH = 400
-WINDOW_HEIGHT = 420  # For score or info area at the top
+WINDOW_HEIGHT = 420  # For the score or info area at the top
 GAME_HEIGHT = 400  # Actual game area height
 
 PADDLE_WIDTH = 15
@@ -51,8 +51,8 @@ def drawBall(ballXPos, ballYPos):
 
 
 def updatePaddle(switch, action, paddleYPos, ballYPos, DeltaframeTime):
-    """Updates the position of the paddle."""
-    # Normalize speed to be FPS-independent
+    """Updates the paddle's position."""
+    # Normalize speed to be independent of FPS
     speed_factor = PADDLE_SPEED_PIXELS_PER_FRAME * (DeltaframeTime / (1000.0 / FPS))
 
     if switch == "left":
@@ -60,7 +60,7 @@ def updatePaddle(switch, action, paddleYPos, ballYPos, DeltaframeTime):
             paddleYPos -= speed_factor
         if action == 2:  # Down
             paddleYPos += speed_factor
-        # If action is 0 (stay), the paddle does not move.
+        # If action is 0 (stop), the paddle does not move.
 
         # Boundary check
         if paddleYPos < 0:
@@ -68,7 +68,7 @@ def updatePaddle(switch, action, paddleYPos, ballYPos, DeltaframeTime):
         if paddleYPos > GAME_HEIGHT - PADDLE_HEIGHT:
             paddleYPos = GAME_HEIGHT - PADDLE_HEIGHT
 
-    elif switch == "right":  # AI-controlled paddle (Simple AI)
+    elif switch == "right":  # Computer-controlled paddle (Simple AI)
         paddle_center = paddleYPos + PADDLE_HEIGHT / 2
         ball_center = ballYPos + BALL_HEIGHT / 2
 
@@ -87,7 +87,7 @@ def updatePaddle(switch, action, paddleYPos, ballYPos, DeltaframeTime):
 
 
 def updateBall(paddle1YPos, paddle2YPos, ballXPos, ballYPos, ballXDirection, ballYDirection, DeltaframeTime):
-    """Updates the position and direction of the ball."""
+    """Updates the ball's position and direction."""
     # Normalize ball speed with DeltaframeTime
     ball_speed_x_factor = BALL_X_SPEED_PIXELS_PER_FRAME * (DeltaframeTime / (1000.0 / FPS))
     ball_speed_y_factor = BALL_Y_SPEED_PIXELS_PER_FRAME * (DeltaframeTime / (1000.0 / FPS))
@@ -95,38 +95,38 @@ def updateBall(paddle1YPos, paddle2YPos, ballXPos, ballYPos, ballXDirection, bal
     ballXPos += ballXDirection * ball_speed_x_factor
     ballYPos += ballYDirection * ball_speed_y_factor
 
-    score = 0.0 # Default score is 0, only changes on events
+    score = 0.0 # Default score is 0, changes only on events
 
-    # Left paddle collision (agent's paddle) - Reward value significantly increased!
+    # Left paddle collision (agent's paddle) - Reward value further increased!
     if (ballXPos <= PADDLE_BUFFER + PADDLE_WIDTH and
             ballYPos + BALL_HEIGHT >= paddle1YPos and
             ballYPos <= (paddle1YPos + PADDLE_HEIGHT) and
             ballXDirection == -1):
         ballXDirection = 1  # Reverse direction
-        score = 100.0  # MUCH HIGHER reward for the agent when it hits the ball (From 50.0 to 100.0)
+        score = 100.0  # MUCH HIGHER reward for the agent when hitting the ball (from previous 50.0 to 100.0)
 
-    # Left wall (agent misses the ball) - Penalty value remains the same
+    # Left wall (if agent misses the ball) - Penalty value kept the same
     elif ballXPos <= 0:
-        ballXDirection = 1  # Send ball back (new round starts)
+        ballXDirection = 1  # Send ball back (start new round)
         score = -10.0  # Large penalty
         # Reset ball to center
         ballXPos = WINDOW_WIDTH / 2
         ballYPos = random.randint(0, 9) * (GAME_HEIGHT - BALL_HEIGHT) / 9
         return [score, ballXPos, ballYPos, ballXDirection, ballYDirection]
 
-    # Right paddle collision (AI's paddle) - Reward set to zero. To focus the agent on its own hits.
+    # Right paddle collision (AI's paddle) - Reward reduced to zero. To focus on agent's own hits.
     if (ballXPos >= WINDOW_WIDTH - PADDLE_WIDTH - PADDLE_BUFFER - BALL_WIDTH and
             ballYPos + BALL_HEIGHT >= paddle2YPos and
             ballYPos <= paddle2YPos + PADDLE_HEIGHT and
             ballXDirection == 1):
         ballXDirection = -1  # Reverse direction
-        score = 0.0  # No reward when hitting opponent's paddle (From 0.5 to 0.0)
+        score = 0.0 # No reward when hitting opponent's paddle (from previous 0.5 to 0.0)
 
 
-    # Right wall (AI misses the ball) - Reward value reduced. To focus the agent on its own hits.
+    # Right wall (if AI misses the ball) - Reward value reduced. To focus on agent hitting its own ball.
     elif ballXPos >= WINDOW_WIDTH - BALL_WIDTH:
-        ballXDirection = -1  # Send ball back (new round starts)
-        score = 5.0  # Lower reward for agent when AI misses (From 10.0 to 5.0)
+        ballXDirection = -1  # Send ball back (start new round)
+        score = 5.0  # Lower reward for agent if AI misses the ball (from previous 10.0 to 5.0)
         # Reset ball to center
         ballXPos = WINDOW_WIDTH / 2
         ballYPos = random.randint(0, 9) * (GAME_HEIGHT - BALL_HEIGHT) / 9
@@ -149,16 +149,16 @@ class PongGame:
     def __init__(self):
         pygame.init()
         pygame.display.set_caption('PONG DCQL ENV')
-        self.paddle1YPos = GAME_HEIGHT / 2 - PADDLE_HEIGHT / 2  # Starting position for the left paddle
-        self.paddle2YPos = GAME_HEIGHT / 2 - PADDLE_HEIGHT / 2  # Starting position for the right paddle
+        self.paddle1YPos = GAME_HEIGHT / 2 - PADDLE_HEIGHT / 2  # Initial position of the left paddle
+        self.paddle2YPos = GAME_HEIGHT / 2 - PADDLE_HEIGHT / 2  # Initial position of the right paddle
         self.ballXPos = WINDOW_WIDTH / 2
-        self.ballYPos = random.randint(0, 9) * (GAME_HEIGHT - BALL_HEIGHT) / 9  # Ball's Y position should be within GAME_HEIGHT
+        self.ballYPos = random.randint(0, 9) * (GAME_HEIGHT - BALL_HEIGHT) / 9 # Ball's Y position must be within GAME_HEIGHT
 
         self.clock = pygame.time.Clock()
 
         self.GScore = 0  # Overall score
 
-        # Ball's initial direction
+        # Initial ball direction
         self.ballXDirection = random.sample([-1, 1], 1)[0]
         self.ballYDirection = random.sample([-1, 1], 1)[0]
 
@@ -166,18 +166,18 @@ class PongGame:
         """Draws the initial state of the game."""
         pygame.event.pump()  # Empty the event queue
 
-        screen.fill(BLACK)  # Fill the screen with black
+        screen.fill(BLACK)  # Fill screen with black
 
         drawPaddle("left", self.paddle1YPos)
         drawPaddle("right", self.paddle2YPos)
 
         drawBall(self.ballXPos, self.ballYPos)
 
-        pygame.display.flip()  # Update the display
+        pygame.display.flip()  # Update the screen
 
     def PlayNextMove(self, action):
         """Plays the next step of the game and returns the screen image."""
-        # Get DeltaframeTime from tick() method, which limits FPS and returns elapsed time.
+        # Get DeltaframeTime from the tick() method, which both limits FPS and provides elapsed time.
         DeltaframeTime = self.clock.tick(FPS)
 
         pygame.event.pump()  # Process events (necessary)
@@ -186,11 +186,11 @@ class PongGame:
 
         screen.fill(BLACK)  # Clear the screen
 
-        # Update the left paddle (controlled by the agent)
+        # Update left paddle (controlled by agent)
         self.paddle1YPos = updatePaddle("left", action, self.paddle1YPos, self.ballYPos, DeltaframeTime)
         drawPaddle("left", self.paddle1YPos)
 
-        # Update the right paddle (controlled by the computer)
+        # Update right paddle (controlled by computer)
         self.paddle2YPos = updatePaddle("right", 0, self.paddle2YPos, self.ballYPos, DeltaframeTime)
         drawPaddle("right", self.paddle2YPos)
 
@@ -202,16 +202,16 @@ class PongGame:
 
         drawBall(self.ballXPos, self.ballYPos)
 
-        # Update overall score: Simply add the current step's score
+        # Update overall score: simply add the current step's score
         self.GScore += score
 
-        # Get the screen image
+        # Get screen image
         ScreenImage = pygame.surfarray.array3d(pygame.display.get_surface())
-        pygame.display.flip()  # Final update and display the screen
+        pygame.display.flip()  # Finally update and display the screen
 
         return [score, ScreenImage]
 
-# Main block for testing
+# Main block for testing purposes
 if __name__ == '__main__':
     pg = PongGame()
     pg.InitialDisplay()
