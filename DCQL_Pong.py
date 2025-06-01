@@ -1,177 +1,223 @@
-import numpy as np
-import pandas as pd
 import random
 import pygame
-from collections import deque
+import numpy as np
+import time
+
 from keras.models import Sequential
-from keras.layers import Dense, Input
-from keras.optimizers import Adam
+from keras.layers import Dense, Activation, Flatten
+from keras.layers import Conv2D
+from collections import deque
 
-# 📌 Önce Pygame başlatılıyor
-pygame.init()
+FPS = 60
 
-# Oyun parametreleri
-width, height = 360, 360
-fps = 30
-white, black, red, blue, green = (255, 255, 255), (0, 0, 0), (255, 0, 0), (0, 0, 255), (0, 255, 0)
+WINDOW_WIDTH = 400
+WINDOW_HEIGHT = 420  # For score or info area at the top
+GAME_HEIGHT = 400  # Actual game area height
 
-# 📌 Pygame ekranını oluştur
-screen = pygame.display.set_mode((width, height))
-pygame.display.set_caption("RL GAME")
+PADDLE_WIDTH = 15
+PADDLE_HEIGHT = 60
+PADDLE_BUFFER = 15
 
-class Player(pygame.sprite.Sprite):
+BALL_WIDTH = 20
+BALL_HEIGHT = 20
+
+# Define speeds in pixels/frame. Will be normalized with DeltaframeTime.
+PADDLE_SPEED_PIXELS_PER_FRAME = 5
+BALL_X_SPEED_PIXELS_PER_FRAME = 3
+BALL_Y_SPEED_PIXELS_PER_FRAME = 3
+
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+
+screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+
+
+def drawPaddle(switch, paddleYPos):
+    """Draws a paddle at the specified position."""
+    if switch == "left":
+        paddle = pygame.Rect(PADDLE_BUFFER, paddleYPos, PADDLE_WIDTH, PADDLE_HEIGHT)
+    elif switch == "right":
+        paddle = pygame.Rect(WINDOW_WIDTH - PADDLE_BUFFER - PADDLE_WIDTH, paddleYPos, PADDLE_WIDTH, PADDLE_HEIGHT)
+    pygame.draw.rect(screen, WHITE, paddle)
+
+
+def drawBall(ballXPos, ballYPos):
+    """Draws the ball at the specified position."""
+    ball = pygame.Rect(ballXPos, ballYPos, BALL_WIDTH, BALL_HEIGHT)
+    pygame.draw.rect(screen, WHITE, ball)
+
+
+def updatePaddle(switch, action, paddleYPos, ballYPos, DeltaframeTime):
+    """Updates the position of the paddle."""
+    # Normalize speed to be FPS-independent
+    speed_factor = PADDLE_SPEED_PIXELS_PER_FRAME * (DeltaframeTime / (1000.0 / FPS))
+
+    if switch == "left":
+        if action == 1:  # Up
+            paddleYPos -= speed_factor
+        if action == 2:  # Down
+            paddleYPos += speed_factor
+        # If action is 0 (stay), the paddle does not move.
+
+        # Boundary check
+        if paddleYPos < 0:
+            paddleYPos = 0
+        if paddleYPos > GAME_HEIGHT - PADDLE_HEIGHT:
+            paddleYPos = GAME_HEIGHT - PADDLE_HEIGHT
+
+    elif switch == "right":  # AI-controlled paddle (Simple AI)
+        paddle_center = paddleYPos + PADDLE_HEIGHT / 2
+        ball_center = ballYPos + BALL_HEIGHT / 2
+
+        if paddle_center < ball_center:
+            paddleYPos += speed_factor
+        elif paddle_center > ball_center:
+            paddleYPos -= speed_factor
+
+        # Boundary check
+        if paddleYPos < 0:
+            paddleYPos = 0
+        if paddleYPos > GAME_HEIGHT - PADDLE_HEIGHT:
+            paddleYPos = GAME_HEIGHT - PADDLE_HEIGHT
+
+    return paddleYPos
+
+
+def updateBall(paddle1YPos, paddle2YPos, ballXPos, ballYPos, ballXDirection, ballYDirection, DeltaframeTime):
+    """Updates the position and direction of the ball."""
+    # Normalize ball speed with DeltaframeTime
+    ball_speed_x_factor = BALL_X_SPEED_PIXELS_PER_FRAME * (DeltaframeTime / (1000.0 / FPS))
+    ball_speed_y_factor = BALL_Y_SPEED_PIXELS_PER_FRAME * (DeltaframeTime / (1000.0 / FPS))
+
+    ballXPos += ballXDirection * ball_speed_x_factor
+    ballYPos += ballYDirection * ball_speed_y_factor
+
+    score = 0.0 # Default score is 0, only changes on events
+
+    # Left paddle collision (agent's paddle) - Reward value significantly increased!
+    if (ballXPos <= PADDLE_BUFFER + PADDLE_WIDTH and
+            ballYPos + BALL_HEIGHT >= paddle1YPos and
+            ballYPos <= (paddle1YPos + PADDLE_HEIGHT) and
+            ballXDirection == -1):
+        ballXDirection = 1  # Reverse direction
+        score = 100.0  # MUCH HIGHER reward for the agent when it hits the ball (From 50.0 to 100.0)
+
+    # Left wall (agent misses the ball) - Penalty value remains the same
+    elif ballXPos <= 0:
+        ballXDirection = 1  # Send ball back (new round starts)
+        score = -10.0  # Large penalty
+        # Reset ball to center
+        ballXPos = WINDOW_WIDTH / 2
+        ballYPos = random.randint(0, 9) * (GAME_HEIGHT - BALL_HEIGHT) / 9
+        return [score, ballXPos, ballYPos, ballXDirection, ballYDirection]
+
+    # Right paddle collision (AI's paddle) - Reward set to zero. To focus the agent on its own hits.
+    if (ballXPos >= WINDOW_WIDTH - PADDLE_WIDTH - PADDLE_BUFFER - BALL_WIDTH and
+            ballYPos + BALL_HEIGHT >= paddle2YPos and
+            ballYPos <= paddle2YPos + PADDLE_HEIGHT and
+            ballXDirection == 1):
+        ballXDirection = -1  # Reverse direction
+        score = 0.0  # No reward when hitting opponent's paddle (From 0.5 to 0.0)
+
+
+    # Right wall (AI misses the ball) - Reward value reduced. To focus the agent on its own hits.
+    elif ballXPos >= WINDOW_WIDTH - BALL_WIDTH:
+        ballXDirection = -1  # Send ball back (new round starts)
+        score = 5.0  # Lower reward for agent when AI misses (From 10.0 to 5.0)
+        # Reset ball to center
+        ballXPos = WINDOW_WIDTH / 2
+        ballYPos = random.randint(0, 9) * (GAME_HEIGHT - BALL_HEIGHT) / 9
+        return [score, ballXPos, ballYPos, ballXDirection, ballYDirection]
+
+    # Top wall collision
+    if ballYPos <= 0:
+        ballYPos = 0
+        ballYDirection = 1
+
+    # Bottom wall collision
+    elif ballYPos >= GAME_HEIGHT - BALL_HEIGHT:
+        ballYPos = GAME_HEIGHT - BALL_HEIGHT
+        ballYDirection = -1
+
+    return [score, ballXPos, ballYPos, ballXDirection, ballYDirection]
+
+
+class PongGame:
     def __init__(self):
-        pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.Surface((20, 20))
-        self.image.fill(blue)
-        self.rect = self.image.get_rect()
-        self.rect.centerx, self.rect.bottom = width / 2, height - 1
-        self.speedx, self.radius = 0, 10
-        pygame.draw.circle(self.image, red, self.rect.center, self.radius)
+        pygame.init()
+        pygame.display.set_caption('PONG DCQL ENV')
+        self.paddle1YPos = GAME_HEIGHT / 2 - PADDLE_HEIGHT / 2  # Starting position for the left paddle
+        self.paddle2YPos = GAME_HEIGHT / 2 - PADDLE_HEIGHT / 2  # Starting position for the right paddle
+        self.ballXPos = WINDOW_WIDTH / 2
+        self.ballYPos = random.randint(0, 9) * (GAME_HEIGHT - BALL_HEIGHT) / 9  # Ball's Y position should be within GAME_HEIGHT
 
-    def update(self, action):
-        keys = pygame.key.get_pressed()  # 📌 Pygame olaylarını düzgün işle
-        self.speedx = -4 if keys[pygame.K_LEFT] or action == 0 else 4 if keys[pygame.K_RIGHT] or action == 1 else 0
-
-        self.rect.x += self.speedx
-        self.rect.right, self.rect.left = min(self.rect.right, width), max(self.rect.left, 0)
-
-    def getCoordinates(self):
-        return self.rect.x, self.rect.y
-
-
-class Enemy(pygame.sprite.Sprite):
-    def __init__(self):
-        pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.Surface((10, 10))
-        self.image.fill(red)
-        self.rect = self.image.get_rect()
-        self.rect.x, self.rect.y = random.randrange(0, width - self.rect.width), random.randrange(2, 6)
-        self.radius, self.speedx, self.speedy = 5, 0, 3
-        pygame.draw.circle(self.image, white, self.rect.center, self.radius)
-
-    def update(self):
-        self.rect.y += self.speedy
-        if self.rect.top > height + 10:
-            self.rect.x, self.rect.y = random.randrange(0, width - self.rect.width), random.randrange(2, 6)
-
-    def getCoordinates(self):
-        return self.rect.x, self.rect.y
-
-
-class DQLAgent:
-    def __init__(self):
-        self.state_size, self.action_size = 4, 3
-        self.gamma, self.learning_rate = 0.95, 0.001
-        self.epsilon, self.epsilon_decay, self.epsilon_min = 1, 0.995, 0.01
-        self.memory = deque(maxlen=1000)
-        self.model = self.build_model()
-
-    def build_model(self):
-        model = Sequential()
-        model.add(Input(shape=(4,)))
-        model.add(Dense(48, activation="relu"))
-        model.add(Dense(self.action_size, activation="linear"))
-        model.compile(loss="mse", optimizer=Adam(learning_rate=self.learning_rate))
-        return model
-
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
-
-    def act(self, state):
-        state = np.array(state).reshape(1, 4)
-        return random.randrange(self.action_size) if np.random.rand() <= self.epsilon else np.argmax(
-            self.model.predict(state)[0])
-
-    def replay(self, batch_size):
-        if len(self.memory) < batch_size:
-            return
-        minibatch = random.sample(self.memory, batch_size)
-        for state, action, reward, next_state, done in minibatch:
-            state, next_state = np.array(state).reshape(1, 4), np.array(next_state).reshape(1, 4)
-            target = reward if done else reward + self.gamma * np.amax(self.model.predict(next_state)[0])
-            train_target = self.model.predict(state)
-            train_target[0][action] = target
-            self.model.fit(state, train_target, verbose=0)
-
-    def adaptiveEGreedy(self):
-        self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
-
-
-class Env:
-    def __init__(self):
-        self.screen = screen  # 📌 Ekranı doğrudan kullan
-        self.all_sprite, self.enemy = pygame.sprite.Group(), pygame.sprite.Group()
-        self.player = Player()
-        self.all_sprite.add(self.player)
-        self.m1, self.m2 = Enemy(), Enemy()
-        self.enemy.add(self.m1, self.m2)
-        self.all_sprite.add(self.m1, self.m2)
-        self.reward, self.done, self.total_reward = 0, False, 0
-        self.agent = DQLAgent()
         self.clock = pygame.time.Clock()
 
-    def findDistance(self, a, b):
-        return a - b
+        self.GScore = 0  # Overall score
 
-    def step(self, action):
-        state_list = []
-        self.player.update(action)
-        self.m1.update()
-        self.m2.update()
+        # Ball's initial direction
+        self.ballXDirection = random.sample([-1, 1], 1)[0]
+        self.ballYDirection = random.sample([-1, 1], 1)[0]
 
-        next_player_state, next_m1_state, next_m2_state = self.player.getCoordinates(), self.m1.getCoordinates(), self.m2.getCoordinates()
+    def InitialDisplay(self):
+        """Draws the initial state of the game."""
+        pygame.event.pump()  # Empty the event queue
 
-        state_list += [
-            self.findDistance(next_player_state[0], next_m1_state[0]),
-            self.findDistance(next_player_state[1], next_m1_state[1]),
-            self.findDistance(next_player_state[0], next_m2_state[0]),
-            self.findDistance(next_player_state[1], next_m2_state[1])
-        ]
-        return state_list
+        screen.fill(BLACK)  # Fill the screen with black
 
-    def initialStates(self):
-        return self.step(0)
+        drawPaddle("left", self.paddle1YPos)
+        drawPaddle("right", self.paddle2YPos)
 
-    def run(self):
-        state = self.initialStates()
-        running, batch_size = True, 24
+        drawBall(self.ballXPos, self.ballYPos)
 
-        while running:
-            self.reward = 2
-            self.clock.tick(fps)
+        pygame.display.flip()  # Update the display
 
-            # 📌 Pygame olaylarını yönet
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
+    def PlayNextMove(self, action):
+        """Plays the next step of the game and returns the screen image."""
+        # Get DeltaframeTime from tick() method, which limits FPS and returns elapsed time.
+        DeltaframeTime = self.clock.tick(FPS)
 
-            action = self.agent.act(state)
-            next_state = self.step(action)
-            self.total_reward += self.reward
-            hits = pygame.sprite.spritecollide(self.player, self.enemy, False, pygame.sprite.collide_circle)
+        pygame.event.pump()  # Process events (necessary)
 
-            if hits:
-                self.reward, self.total_reward = -150, self.total_reward - 150
-                self.done, running = True, False
-                print("Total Reward:", self.total_reward)
+        score = 0  # Score for this step
 
-            self.agent.remember(state, action, self.reward, next_state, self.done)
-            state = next_state
-            self.agent.replay(batch_size)
-            self.agent.adaptiveEGreedy()
+        screen.fill(BLACK)  # Clear the screen
 
-            self.screen.fill(green)
-            self.all_sprite.draw(self.screen)
-            pygame.display.flip()
+        # Update the left paddle (controlled by the agent)
+        self.paddle1YPos = updatePaddle("left", action, self.paddle1YPos, self.ballYPos, DeltaframeTime)
+        drawPaddle("left", self.paddle1YPos)
 
-        pygame.quit()
+        # Update the right paddle (controlled by the computer)
+        self.paddle2YPos = updatePaddle("right", 0, self.paddle2YPos, self.ballYPos, DeltaframeTime)
+        drawPaddle("right", self.paddle2YPos)
 
+        # Update the ball
+        [score, self.ballXPos, self.ballYPos, self.ballXDirection, self.ballYDirection] = updateBall(
+            self.paddle1YPos, self.paddle2YPos, self.ballXPos, self.ballYPos,
+            self.ballXDirection, self.ballYDirection, DeltaframeTime
+        )
 
-if __name__ == "__main__":
-    env = Env()
-    t = 0
-    while True:
-        t += 1
-        print("Episode:", t)
-        env.run()
+        drawBall(self.ballXPos, self.ballYPos)
+
+        # Update overall score: Simply add the current step's score
+        self.GScore += score
+
+        # Get the screen image
+        ScreenImage = pygame.surfarray.array3d(pygame.display.get_surface())
+        pygame.display.flip()  # Final update and display the screen
+
+        return [score, ScreenImage]
+
+# Main block for testing
+if __name__ == '__main__':
+    pg = PongGame()
+    pg.InitialDisplay()
+    # You can add a small loop for testing
+    # for _ in range(300): # Run for about 5 seconds
+    #     current_score, screen_img = pg.PlayNextMove(0) # Do nothing (don't move)
+    #     print(f"Current Score: {current_score}, Game Score: {pg.GScore}")
+    #     time.sleep(0.01) # To see it slower
+    # pygame.quit()
