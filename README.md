@@ -54,7 +54,7 @@ If you'd like, I can also add a visual training progress chart, demo video/GIF s
 
 🌟 Features
 ---
-🧠 Deep Q-Learning (DQL) Algorithm: Learns optimal strategies from raw pixel inputs using CNNs
+🧠 Deep Q-Learning (DQL) Algorithm: Learns optimal strategies from raw pixel inputs using CNNs</br>
 🔁 Experience Replay: Improves stability by breaking temporal correlations
 🎯 Target Network: Stabilizes Q-value targets, critical for deep RL
 ⚖️ Epsilon-Greedy Exploration: Balances trying new moves with exploiting known strategies
