@@ -1,16 +1,17 @@
 🕹️ Deep Q-Learning (DQL) Enhanced Pong Game AI
-
+---
 This project showcases a Deep Q-Learning (DQL) agent learning to play the classic Pong game. 
 The agent utilizes deep neural networks to process game visuals and make real-time decisions, aiming to master the game through reinforcement learning.
------------------------------------
-📘 Project Description
 
+📘 Project Description
+---
 This repository contains the code for a Pong game environment and a Deep Q-Learning (DQL) agent trained to play it. 
 The agent learns by interacting with the environment—observing screen states, selecting actions (such as moving the paddle), and receiving rewards or penalties based on its performance.
 
 Over time, the agent improves its strategy through reinforcement learning, aiming to maximize its score in this classic arcade setting.
 
 📁 Project Structure
+---
 The project is organized into three main Python files:
 
 DCQL_Pong.py – Game Environment
@@ -50,9 +51,9 @@ Runs the main training loop:
 The agent plays the game, collects experience, and updates its model.
 Displays progress updates and game scores in the console, allowing you to monitor learning performance in real time.
 If you'd like, I can also add a visual training progress chart, demo video/GIF support, or instructions for running the project in Jupyter Notebook or Colab.
------------------------------------
-🌟 Features
 
+🌟 Features
+---
 🧠 Deep Q-Learning (DQL) Algorithm: Learns optimal strategies from raw pixel inputs using CNNs
 🔁 Experience Replay: Improves stability by breaking temporal correlations
 🎯 Target Network: Stabilizes Q-value targets, critical for deep RL
